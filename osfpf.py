@@ -18,8 +18,8 @@ class ConfigsManager:
 
     def _getConfig(self, section, name):
         section_conf = self.configs[section]
-        if section_conf is not None and isinstance(section_conf, dict):
-            return section_conf.get(name)
+        if section_conf is not None:
+            return section_conf[name]
         return ""
 
     def getUsername(self):
@@ -35,14 +35,16 @@ class ConfigsManager:
 class ArxivFinder:
 
     def __init__(self, path):
-        self.queries = None
+        self.queries = []
         self.downloads = []
         with open(path, 'r') as f:
-            self.queries = csv.reader(f, delimiter=',')
+            queries = csv.DictReader(f, delimiter=',')
+            for q in queries:
+                self.queries.append(q)
 
     def find(self, query, max=50, path="./"):
         try:
-            results = arxiv.query(query, max_results=max)
+            results = arxiv.query(query, max_results=int(max))
             self.downloads.append({
                 "query": query,
                 "path": arxiv.arxiv.download(results, dirpath=path)
@@ -53,7 +55,7 @@ class ArxivFinder:
             logging.info("Found {0} papers".format(len(results)))
 
     def findAll(self):
-        if self.queries is not None and isinstance(self.queries, dict):
+        if self.queries is not None:
             for query in self.queries:
                 self.find(query.get('query'), query.get(
                     'max'), query.get('path'))
