@@ -43,12 +43,14 @@ class ArxivFinder:
                 self.queries.append(q)
 
     def find(self, query, max=50, path="./"):
+        results = []
         try:
             results = arxiv.query(query, max_results=int(max))
-            self.downloads.append({
-                "query": query,
-                "path": arxiv.arxiv.download(results, dirpath=path)
-            })
+            for result in results:
+                self.downloads.append({
+                    "query": query,
+                    "path": arxiv.arxiv.download(result, dirpath=path)
+                })
         except Exception as ex:
             logging.error(ex)
         finally:
