@@ -4,6 +4,7 @@ import string
 import random
 import tempfile
 import osfpf
+import queue
 import unittest
 import sys
 sys.path.append('../')
@@ -45,3 +46,28 @@ class OSFPFTest(unittest.TestCase):
         for download in finder.downloads:
             self.assertIsNotNone(download.get('query'))
             self.assertIsNotNone(download.get('path'))
+
+    def test_arxiv_finder_queue(self):
+        q = queue.Queue()
+        queries = ['Neural Networks', 'CNN', 'Image Classification']
+        m = 1
+        path = '/tmp/'
+        tmp = '/tmp/' + \
+            ''.join(random.choices(string.ascii_letters +
+                                   string.digits, k=16)) + '.csv'
+        with open(tmp, 'w+', newline='') as csvfile:
+            testwriter = csv.writer(csvfile, delimiter=',')
+            testwriter.writerow(['query',  'max', 'path'])
+            for query in queries:
+                testwriter.writerow([query, m, path])
+        finder = osfpf.ArxivFinder(tmp)
+        finder.findAll(q)
+        self.assertGreater(len(finder.downloads), 0)
+        self.assertLessEqual(len(finder.downloads), 3)
+        for download in finder.downloads:
+            self.assertIsNotNone(download.get('query'))
+            self.assertIsNotNone(download.get('path'))
+            item = q.get(timeout=1)
+            self.assertIsNotNone(item)
+            self.assertEqual(download.get('query'), item['query'])
+            self.assertEqual(download.get('path'), item['path'])

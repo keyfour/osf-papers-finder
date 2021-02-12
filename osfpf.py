@@ -7,6 +7,8 @@ import logging
 from osfclient import OSF
 import os
 import argparse
+import threading
+import queue
 
 
 class ConfigsManager:
@@ -39,28 +41,36 @@ class ArxivFinder:
         self.downloads = []
         with open(path, 'r') as f:
             queries = csv.DictReader(f, delimiter=',')
-            for q in queries:
-                self.queries.append(q)
+            for buf in queries:
+                self.queries.append(buf)
 
-    def find(self, query, max=50, path="./"):
+    def find(self, query, max=50, path="./", buf=None):
         results = []
         try:
+            logging.info("Searching for {0} ({1} items)".format(query, max))
             results = arxiv.query(query, max_results=int(max))
             for result in results:
-                self.downloads.append({
+                logging.info("Downloading {0} to {1}...".format(results, path))
+                download = {
                     "query": query,
                     "path": arxiv.arxiv.download(result, dirpath=path)
-                })
+                }
+                self.downloads.append(download)
+                if buf is not None:
+                    logging.info("Put to queue {0}".format(download))
+                    buf.put(download)
+                logging.info("Done.")
+
         except Exception as ex:
             logging.error(ex)
         finally:
             logging.info("Found {0} papers".format(len(results)))
 
-    def findAll(self):
+    def findAll(self, buf=None):
         if self.queries is not None:
             for query in self.queries:
                 self.find(query.get('query'), query.get(
-                    'max'), query.get('path'))
+                    'max'), query.get('path'), buf)
 
 
 class OSFClient:
@@ -79,23 +89,33 @@ class OSFClient:
         except Exception as ex:
             logging.error(ex)
 
+    def uploadWorker(self, buf):
+        while True:
+            item = buf.get()
+            folder = item.get('query')
+            path = item.get('path')
+            logging.info("Uploading from {0} to {1}...".format(path, folder))
+            self.uploadFile(folder, path)
+            buf.task_done()
+            logging.info('Done.')
+
 
 def main(conf, queries):
+    logging.basicConfig(level=logging.INFO)
     manager = ConfigsManager(conf)
     finder = ArxivFinder(queries)
     client = OSFClient(manager.getUsername(),
                        manager.getPassword(), manager.getProject())
-    finder.findAll()
-    for download in finder.downloads:
-        query = download.get('query')
-        path = download.get('path')
-        if query is not None and path is not None:
-            client.uploadFile(query, path)
+    q = queue.Queue()
+    threading.Thread(target=client.uploadWorker, args=(q,), daemon=True).start()
+    finder.findAll(q)
+    q.join()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--config', required=True, help="Config file")
-    parser.add_argument('-t', '--table', required= True, help="CVS file with queries")
+    parser.add_argument('-t', '--table', required=True,
+                        help="CVS file with queries")
     args = parser.parse_args()
     main(args.config, args.table)
